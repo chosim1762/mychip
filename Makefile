@@ -1,176 +1,93 @@
-VERILOG_SRCS = ./source/led.v
-TOP_MODULE = led
-DEVICE = GW1NZ-LV1QN48C6/I5
-DEV = GW1NZ-1
-BOARD = tangnano1k
+#-----------------------------------------------------------------
+export DK_HOME=~/ETRI050_DesignKit
+export DK_STD_CELL=$(DK_HOME)/digital_ETRI
+export DK_ANA_LIB=$(DK_HOME)/analog_ETRI
+export DK_PAD_LIB=$(DK_HOME)/pads_ETRI050
+export DK_TECH=$(DK_HOME)/tech
+export DK_SCRIPT=$(DK_HOME)/scripts
 
-all :
-	@echo ''
-	@echo 'Makefile for FPGA flashing : exammple Tang Nano 1K'
-	@echo 'Usage:'
-	@echo '    make [option]'
-	@echo '         Use one of following options'
-	@echo '             list   # Show the list of all available FPGA'
-	@echo '             detect # Detect the connected FPGA model'
-	@echo '             synthesizefpga # Synthesize the Verilog code into RTL level'
-	@echo '             pnr   # Place & Route the Floating Gated Array'
-	@echo '             bitstream   # Convert the Place&Routed file to Bitstream for flash'
-	@echo '             flash   # Flash the Bitstream to the FPGA model'
+SCRIPTS_PATH = ~/ETRI050_DesignKit/scripts
+PAD_PATH =  ~/ETRI050_DesignKit/pads_ETRI
+LAYOUT_PATH = ../layout
 
-	@echo ''
-	@echo 'Makefile for QFlow RTL-to-Layout using ETRI 0.5um CMOS Technology'
-	@echo 'Usage:'
-	@echo '    make [option]'
-	@echo '         Use one of following options'
-	@echo '             synthesize'
-	@echo '             place'
-	@echo '             sta'
-	@echo '             route'
-	@echo '             migrate'
-	@echo '             lvs'
-	@echo '             size'
-	@echo ''
-	@echo '             config_m1f'
-	@echo '             config_m2f'
-	@echo '             clean_cell'
-	@echo ''
+CHIP_NAME = ourchip
 
+PAD_X = 97.50
+PAD_Y = 97.50
+PIN_ROUTE_X = 490.000
+PIN_ROUTE_Y = 507.000
+CORE_X = 490.000
+CORE_Y = 507.000
 
-list :
-	sudo openFPGALoader --list-boards
+all:
+	@echo
+	@echo 'Generate Chip-Top: $(CHIP_NAME)_Top.gds'
+	@echo
+	@echo '    make copy_pad_frame'
+	@echo '    make copy_core'
+	@echo
+	@echo '    make lvs_core'
+	@echo '    make stack_core'
+	@echo '    make drc_core'
+	@echo
+	@echo '    make extract_pad'
+	@echo '    make extract_pin_route'
+	@echo
+	@echo '    make generate_gds'
+	@echo
 
-detect :
-	sudo openFPGALoader --detect
+copy_pad_frame: $(CHIP_NAME)_Top.mag
 
-synthesizefpga :
-	yosys -p "read_verilog $(VERILOG_SRCS); synth_gowin -json ./synthesis/$(TOP_MODULE)_yosys.json"
+$(CHIP_NAME)_Top.mag:
+	cp $(PAD_PATH)/MPW_PAD_28Pin_IO.mag ./$(CHIP_NAME)_Top.mag
 
-pnr :
-	nextpnr-himbaechel --json ./synthesis/$(TOP_MODULE)_yosys.json \
- --write ./synthesis/$(TOP_MODULE)_placeroute.json --device $(DEVICE) --vopt cst=./source/$(BOARD).cst
+copy_core:  $(CHIP_NAME)_Core.mag
 
-bitstream :
-	gowin_pack --device $(DEV) ./synthesis/$(TOP_MODULE)_placeroute.json --output ./synthesis/$(TOP_MODULE).fs --compress
+$(CHIP_NAME)_Core.mag:
+	cp $(LAYOUT_PATH)/$(CHIP_NAME).mag ./$(CHIP_NAME)_Core.mag
 
-flash :
-	openFPGALoader -b $(BOARD) -f ./synthesis/$(TOP_MODULE).fs
+drc_core:
+	$(DK_SCRIPT)/run_drc.sh $(CHIP_NAME)_Core | tee $(CHIP_NAME)_Core_DRC.log
 
-clean :
-	rm -f ./log/*
-	rm -f ./synthesis/*
-	touch project_vars.sh
+lvs_core:
+	$(DK_SCRIPT)/run_lvs2.sh $(CHIP_NAME)_Core $(CHIP_NAME) | tee $(CHIP_NAME)_Core_LVS.log
 
-synthesize : ./log/synth.log
-./log/synth.log : $(VERILOG_SRCS)
-	qflow synthesize -T etri050 $(TOP_MODULE)
+stack_core:
+	$(DK_SCRIPT)/check_via_stack.py $(CHIP_NAME)_Core m2contact m3contact 6 | \
+		tee $(CHIP_NAME)_Core_Stacked.log
 
-place : ./log/place.log
-./log/place.log : \
-	./layout/$(TOP_MODULE).par \
-	./layout/$(TOP_MODULE).cel2 \
-	./log/synth.log \
-	project_vars.sh
-	qflow place -T etri050 $(TOP_MODULE)
+extract_pad: $(CHIP_NAME)_Pad.mag
 
-sta : ./log/sta.log
+$(CHIP_NAME)_Pad.mag: $(CHIP_NAME)_Top.mag
+	python3 $(SCRIPTS_PATH)/xPad.py $(CHIP_NAME)
 
-./log/sta.log : \
-	./synthesis/$(TOP_MODULE).rtlnopwr.v \
-	./log/place.log \
-	project_vars.sh
-	qflow sta -T etri050 $(TOP_MODULE)
+extract_pin_route:  $(CHIP_NAME)_Pin_Route.mag
 
+$(CHIP_NAME)_Pin_Route.mag: $(CHIP_NAME)_Top.mag
+	python3 $(SCRIPTS_PATH)/xPin_Route_Metal.py $(CHIP_NAME)
 
+generate_gds: $(CHIP_NAME)_Top.gds
 
-route : ./log/route.log
-./log/route.log : \
-	./log/place.log \
-	./layout/$(TOP_MODULE).def \
-	./layout/$(TOP_MODULE)_unroute.def \
-	project_vars.sh
-	qflow route -T etri050 $(TOP_MODULE)
+$(CHIP_NAME)_Top.gds: $(CHIP_NAME)_Pad.mag $(CHIP_NAME)_Pin_Route.mag $(CHIP_NAME)_Top.mag
+	$(SCRIPTS_PATH)/generate_chip.sh $(CHIP_NAME) \
+			$(PAD_X) $(PAD_Y) \
+			$(PIN_ROUTE_X) $(PIN_ROUTE_Y) \
+			$(CORE_X) $(CORE_Y)
 
+clean:
+	rm -f $(CHIP_NAME)_Pad.mag
+	rm -f $(CHIP_NAME)_Pad_F.mag
+	rm -f $(CHIP_NAME)_Pin_Route.mag
+	rm -f $(CHIP_NAME)_Pin_Route_F.mag
+	rm -f $(CHIP_NAME)_Top_F.mag
+	rm -f $(CHIP_NAME)_Core_F.mag
+	rm -f $(CHIP_NAME)_Core_DRC.mag
+	rm -f $(CHIP_NAME)_Core_LVS.mag
+	rm -f $(CHIP_NAME)_Core_Stack.mag
 
-migrate : ./log/magic_db.log project_vars.sh
-./log/magic_db.log : \
-	./log/route.log
-	qflow migrate -T etri050 $(TOP_MODULE)
-
-lvs : ./log/lvs.log project_vars.sh
-./log/lvs.log : \
-	./synthesis/$(TOP_MODULE).spc \
-	./layout/$(TOP_MODULE).mag \
-	./log/magic_db.log
-	~/ETRI050_DesignKit/scripts/fix_net_name.sh ./synthesis/$(TOP_MODULE).spc
-	qflow lvs -T etri050 $(TOP_MODULE)
-
-size: ./layout/$(TOP_MODULE).mag ./log/magic_db.log
-	~/ETRI050_DesignKit/scripts/size_core.sh $(TOP_MODULE)
-
-
-
-
-#-----
-CELL_SRC1 = ~/ETRI050_DesignKit/digital_ETRI050_m1f
-CELL_SRC2 = ~/ETRI050_DesignKit/digital_ETRI050_m2f
-CELL_LIB  = ~/ETRI050_DesignKit/digital_ETRI
-
-define config_cell
-	cd $(CELL_LIB)
-	cp -f $(1)/AND2X1.mag   $(CELL_LIB)/AND2X1.mag
-	cp -f $(1)/AND2X2.mag   $(CELL_LIB)/AND2X2.mag
-	cp -f $(1)/AOI21X1.mag  $(CELL_LIB)/AOI21X1.mag
-	cp -f $(1)/AOI22X1.mag  $(CELL_LIB)/AOI22X1.mag
-	cp -f $(1)/BUFX2.mag    $(CELL_LIB)/BUFX2.mag
-	cp -f $(1)/BUFX4.mag    $(CELL_LIB)/BUFX4.mag
-	cp -f $(1)/CLKBUF1.mag  $(CELL_LIB)/CLKBUF1.mag
-	cp -f $(1)/CLKBUF2.mag  $(CELL_LIB)/CLKBUF2.mag
-	cp -f $(1)/CLKBUF3.mag  $(CELL_LIB)/CLKBUF3.mag
-	cp -f $(1)/DFFNEGX1.mag $(CELL_LIB)/DFFNEGX1.mag
-	cp -f $(1)/DFFPOSX1.mag $(CELL_LIB)/DFFPOSX1.mag
-	cp -f $(1)/DFFSR.mag    $(CELL_LIB)/DFFSR.mag
-	cp -f $(1)/FILL.mag     $(CELL_LIB)/FILL.mag
-	cp -f $(1)/INVX1.mag    $(CELL_LIB)/INVX1.mag
-	cp -f $(1)/INVX2.mag    $(CELL_LIB)/INVX2.mag
-	cp -f $(1)/INVX4.mag    $(CELL_LIB)/INVX4.mag
-	cp -f $(1)/INVX8.mag    $(CELL_LIB)/INVX8.mag
-	cp -f $(1)/MUX2X1.mag   $(CELL_LIB)/MUX2X1.mag
-	cp -f $(1)/NAND2X1.mag  $(CELL_LIB)/NAND2X1.mag
-	cp -f $(1)/NAND3X1.mag  $(CELL_LIB)/NAND3X1.mag
-	cp -f $(1)/NOR2X1.mag   $(CELL_LIB)/NOR2X1.mag
-	cp -f $(1)/NOR3X1.mag   $(CELL_LIB)/NOR3X1.mag
-	cp -f $(1)/OAI21X1.mag  $(CELL_LIB)/OAI21X1.mag
-	cp -f $(1)/OAI22X1.mag  $(CELL_LIB)/OAI22X1.mag
-	cp -f $(1)/OR2X1.mag    $(CELL_LIB)/OR2X1.mag
-	cp -f $(1)/OR2X2.mag    $(CELL_LIB)/OR2X2.mag
-	cp -f $(1)/TBUFX1.mag   $(CELL_LIB)/TBUFX1.mag
-	cp -f $(1)/TBUFX2.mag   $(CELL_LIB)/TBUFX2.mag
-	cp -f $(1)/HAX1.mag     $(CELL_LIB)/HAX1.mag
-	cp -f $(1)/FAX1.mag     $(CELL_LIB)/FAX1.mag
-	cp -f $(1)/XNOR2X1.mag  $(CELL_LIB)/XNOR2X1.mag
-	cp -f $(1)/XOR2X1.mag   $(CELL_LIB)/XOR2X1.mag
-	cp -f $(1)/LATCH.mag    $(CELL_LIB)/LATCH.mag
-	cp -f $(1)/khu_etri050_stdcells.mag     $(CELL_LIB)/khu_etri050_stdcells.mag
-	cd $(CELL_LIB) && $(MAKE) clean && $(MAKE)
-endef
-
-config_m1f :
-	$(call config_cell,$(CELL_SRC1))
-	@echo ''
-	@echo '-----------------------------------------------------'
-	@echo 'Std-Cel configured with'
-	@echo '    ' $(CELL_SRC1)
-	@echo '-----------------------------------------------------'
-
-config_m2f :
-	$(call config_cell,$(CELL_SRC2))
-	@echo ''
-	@echo '-----------------------------------------------------'
-	@echo 'Std-Cel configured with'
-	@echo '    ' $(CELL_SRC2)
-	@echo '-----------------------------------------------------'
-	@echo ''
-
-clean_cell :
-	cd $(CELL_LIB) && $(MAKE) clean_all
-	rm -f $(CELL_LIB)/*.mag
+clean_all:
+	rm -f *.txt
+	rm -f *.log
+	rm -f *.gds
+	rm -f *.ext
+	rm -f *.spice

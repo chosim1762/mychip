@@ -93,9 +93,14 @@ def get_location(design):
                 CoreX = Yl + Xc
                 CoreY = Xl + Yc
 
-    print('PinRouteX: %.2f PinRouteY: %.2f' % (PinRouteX/100.0, PinRouteY/100.0))
-    print('PadX: %.2f PadY: %.2f' % (PadX/100.0, PadY/100.0))
-    print('Attach the core design to the position of %.2f, %.2f' % (CoreX/100.0, CoreY/100.0))
+    print('PAD_X = %.2f' % (PadX/100.0))
+    print('PAD_Y = %.2f' % (PadY/100.0))
+    print('PIN_ROUTE_X = %.3f' % (PinRouteX/100.0))
+    print('PIN_ROUTE_Y = %.3f' % (PinRouteY/100.0))
+    print('CORE_X = %.3f' % (CoreX/100.0))
+    print('CORE_Y = %.3f' % (CoreY/100.0))
+    print('\nYou can edit the Makefile by above values')
+
 
 
 # -----------------------------------------------------------
@@ -106,15 +111,8 @@ if len(sys.argv)!=2:
     print("Usage: xCore <core name>")
     print("     Extracting New Core from chip-top")
     exit()
-    
+
 file_mag_in  = str(sys.argv[1])+'_Top.mag'
-#file_mag_out = str(sys.argv[1])+'_Core.mag'
 
-# open Magic file for output
-#file_out = open(file_mag_out, 'w')
-
-#read_heading_use(file_mag_in)
 get_location(read_mag(file_mag_in))
 
-#file_out.write("")
-#file_out.close()

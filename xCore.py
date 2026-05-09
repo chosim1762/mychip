@@ -158,9 +158,8 @@ def get_location(design):
                 if CoreY > PadY0:
                     CoreY = PadY0
 
-    print('PinRouteX: %.2f PinRouteY: %.2f' % (PinRouteX/100.0, PinRouteY/100.0))
-    print('PadX: %.2f PadY: %.2f' % (PadX/100.0, PadY/100.0))
-    print('Attach the core design to the position of %.2f, %.2f' % (CoreX/100.0, CoreY/100.0))
+    print('The core design file has been created! Please edit and insert to the Top file')
+    print('by using getcell command at the position of (%.2f, %.2f).' % (CoreX/100.0, CoreY/100.0))
 
 
 # -----------------------------------------------------------
